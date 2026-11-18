@@ -11,7 +11,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Etapa 0: el webhook de prueba simula un POST de servidor a servidor (sin CSRF).
+        $middleware->validateCsrfTokens(except: ['_diag/webhook']);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
