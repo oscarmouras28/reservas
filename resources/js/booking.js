@@ -19,6 +19,19 @@ export default (config) => ({
     loadingSlots: false,
     error: null,
 
+    // Formulario de datos del paciente
+    turnstileSiteKey: config.turnstileSiteKey,
+    showForm: false,
+    form: {
+        name: '', document_type: 'rut', document_number: '', phone: '', email: '', address: '',
+        privacy: false, adult: false,
+    },
+    errors: {},
+    formError: null,
+    submitting: false,
+    turnstileToken: '',
+    widgetId: null,
+
     async init() {
         await this.loadDays();
     },
@@ -120,5 +133,109 @@ export default (config) => ({
 
     pickSlot(slot) {
         this.selectedSlot = slot;
+        this.formError = null;
+        if (this.showForm) this.$nextTick(() => this.renderTurnstile());
+    },
+
+    openForm() {
+        this.showForm = true;
+        this.$nextTick(() => {
+            this.$refs.form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            this.renderTurnstile();
+        });
+    },
+
+    // El script de Cloudflare carga en diferido: se espera hasta que exista.
+    renderTurnstile(attempt = 0) {
+        if (this.widgetId !== null) return;
+        if (!window.turnstile) {
+            if (attempt < 40) {
+                setTimeout(() => this.renderTurnstile(attempt + 1), 250);
+            } else {
+                this.formError = 'No se pudo cargar la verificación anti-robots. Recarga la página.';
+            }
+            return;
+        }
+        if (!this.turnstileSiteKey) {
+            this.formError = 'La verificación anti-robots no está configurada.';
+            return;
+        }
+        this.widgetId = window.turnstile.render(this.$refs.turnstile, {
+            sitekey: this.turnstileSiteKey,
+            callback: (token) => { this.turnstileToken = token; },
+            'expired-callback': () => { this.turnstileToken = ''; },
+            'error-callback': () => { this.turnstileToken = ''; },
+        });
+    },
+
+    // El token sirve una sola vez: tras cada envío fallido se pide otro.
+    resetTurnstile() {
+        this.turnstileToken = '';
+        if (window.turnstile && this.widgetId !== null) window.turnstile.reset(this.widgetId);
+    },
+
+    async submit() {
+        if (this.submitting || !this.selectedSlot) return;
+        this.errors = {};
+        this.formError = null;
+
+        if (!this.turnstileToken) {
+            this.errors = { turnstile: ['Espera a que termine la verificación anti-robots.'] };
+            return;
+        }
+
+        this.submitting = true;
+        const body = new URLSearchParams({
+            service: this.serviceId,
+            start: this.selectedSlot.start,
+            name: this.form.name,
+            document_type: this.form.document_type,
+            document_number: this.form.document_number,
+            phone: this.form.phone,
+            email: this.form.email,
+            address: this.form.address,
+            privacy: this.form.privacy ? '1' : '',
+            adult: this.form.adult ? '1' : '',
+            turnstile: this.turnstileToken,
+        });
+
+        try {
+            const response = await fetch(this.urls.hold, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+                body,
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (response.ok && data.redirect) {
+                window.location.assign(data.redirect);
+                return; // se mantiene "submitting" mientras navega
+            }
+
+            if (response.status === 422) {
+                this.errors = data.errors || {};
+                this.formError = 'Revisa los campos marcados.';
+            } else if (response.status === 409) {
+                // La hora se ocupó: recarga las horas del día y conserva los datos escritos.
+                await this.loadDays();
+                await this.pickDay({ iso: this.selectedDate, available: true });
+                this.error = data.message;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else if (response.status === 419) {
+                this.formError = 'La página estuvo abierta mucho tiempo. Recárgala e inténtalo de nuevo.';
+            } else if (response.status === 429) {
+                this.formError = 'Hiciste demasiados intentos. Espera unos minutos.';
+            } else {
+                this.formError = 'No pudimos guardar tu hora. Inténtalo de nuevo en un momento.';
+            }
+        } catch (e) {
+            this.formError = 'No hay conexión con el servidor. Inténtalo de nuevo.';
+        }
+
+        this.submitting = false;
+        this.resetTurnstile();
     },
 });

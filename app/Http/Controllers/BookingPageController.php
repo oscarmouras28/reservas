@@ -33,8 +33,10 @@ class BookingPageController extends Controller
                 'urls' => [
                     'days' => route('booking.days', $professional->slug),
                     'slots' => route('booking.slots', $professional->slug),
+                    'hold' => route('hold.store', $professional->slug),
                 ],
                 'timezone' => $professional->timezone,
+                'turnstileSiteKey' => config('reservas.turnstile.site_key'),
                 'today' => $now->format('Y-m-d'),
                 'maxMonth' => $now->addDays((int) config('reservas.max_advance_days'))->format('Y-m'),
             ],

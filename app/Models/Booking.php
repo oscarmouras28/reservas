@@ -17,10 +17,20 @@ class Booking extends Model
 
     public const EXPIRED = 'expired';
 
-    protected $fillable = [
-        'professional_id', 'service_id', 'starts_at', 'ends_at', 'status',
-        'hold_expires_at', 'active_start', 'price',
+    /** Campos con datos personales del paciente. */
+    private const PATIENT_FIELDS = [
+        'patient_name', 'document_type', 'document_number', 'phone', 'email', 'address',
+        'consent_accepted_at', 'consent_version', 'consent_text',
     ];
+
+    protected $fillable = [
+        'public_id', 'professional_id', 'service_id', 'starts_at', 'ends_at', 'status',
+        'hold_expires_at', 'active_start', 'price', 'patient_name', 'document_type',
+        'document_number', 'phone', 'email', 'address', 'consent_accepted_at',
+        'consent_version', 'consent_text',
+    ];
+
+    protected $hidden = ['document_number', 'phone', 'email', 'address'];
 
     protected function casts(): array
     {
@@ -29,7 +39,11 @@ class Booking extends Model
             'ends_at' => 'datetime',
             'hold_expires_at' => 'datetime',
             'active_start' => 'datetime',
+            'consent_accepted_at' => 'datetime',
             'price' => 'integer',
+            'document_number' => 'encrypted',
+            'phone' => 'encrypted',
+            'address' => 'encrypted',
         ];
     }
 
@@ -41,6 +55,30 @@ class Booking extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    /** ¿Sigue retenida a la espera del pago? */
+    public function isHeld(): bool
+    {
+        return $this->status === self::PENDING
+            && $this->hold_expires_at !== null
+            && $this->hold_expires_at->isFuture();
+    }
+
+    /**
+     * Cancela una retención pendiente (el paciente cambió de hora): libera el
+     * horario y borra sus datos personales.
+     */
+    public function cancelHold(): void
+    {
+        if ($this->status !== self::PENDING) {
+            return;
+        }
+
+        $this->forceFill(array_fill_keys(self::PATIENT_FIELDS, null) + [
+            'status' => self::CANCELLED,
+            'active_start' => null,
+        ])->save();
     }
 
     /**
@@ -72,5 +110,22 @@ class Booking extends Model
             ->where('status', self::PENDING)
             ->where('hold_expires_at', '<=', $now ?? now())
             ->update(['status' => self::EXPIRED, 'active_start' => null]);
+    }
+
+    /**
+     * Borra los datos personales de reservas que no se completaron, pasado el
+     * plazo de conservación (deja la fila sin datos, para estadísticas).
+     *
+     * @return int cantidad de reservas depuradas
+     */
+    public static function purgeAbandonedData(): int
+    {
+        $limit = now()->subDays((int) config('reservas.abandoned_data_days'));
+
+        return static::query()
+            ->whereIn('status', [self::EXPIRED, self::CANCELLED])
+            ->whereNotNull('patient_name')
+            ->where('updated_at', '<=', $limit)
+            ->update(array_fill_keys(self::PATIENT_FIELDS, null));
     }
 }

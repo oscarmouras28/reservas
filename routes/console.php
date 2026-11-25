@@ -1,8 +1,15 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use App\Models\Booking;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+// Requiere el cron permanente "php artisan schedule:run" cada minuto.
+Schedule::call(fn () => Booking::releaseExpiredHolds())
+    ->everyMinute()
+    ->name('liberar-retenciones')
+    ->withoutOverlapping();
+
+// Borra datos personales de reservas que nunca se completaron.
+Schedule::call(fn () => Booking::purgeAbandonedData())
+    ->dailyAt('04:00')
+    ->name('purgar-datos-abandonados');

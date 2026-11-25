@@ -94,13 +94,19 @@
                 <p class="font-medium">Tu hora</p>
                 <p class="mt-1"><span x-text="selectedDateLabel"></span>, <span x-text="selectedSlot && selectedSlot.time"></span> h</p>
                 <p class="text-slate-600"><span x-text="service.label"></span> · <span x-text="service.price"></span></p>
-                <button type="button" disabled
-                        class="mt-4 w-full cursor-not-allowed rounded-lg bg-slate-300 px-4 py-2 font-medium text-white">
+                <button type="button" @click="openForm()" x-show="!showForm"
+                        class="mt-4 w-full rounded-lg bg-teal-600 px-4 py-2 font-medium text-white hover:bg-teal-700">
                     Continuar
                 </button>
-                <p class="mt-2 text-xs text-slate-500">El formulario de datos y el pago se habilitan en la siguiente etapa.</p>
             </div>
         </section>
     </div>
+
+    @include('booking.partials.form')
 </div>
 @endsection
+
+@push('head')
+    {{-- Cloudflare pide cargarlo desde esta URL exacta, sin copiarlo ni cachearlo. --}}
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+@endpush
