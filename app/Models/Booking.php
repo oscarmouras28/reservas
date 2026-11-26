@@ -6,6 +6,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Booking extends Model
 {
@@ -25,7 +26,7 @@ class Booking extends Model
 
     protected $fillable = [
         'public_id', 'professional_id', 'service_id', 'starts_at', 'ends_at', 'status',
-        'hold_expires_at', 'active_start', 'price', 'patient_name', 'document_type',
+        'hold_expires_at', 'confirmed_at', 'active_start', 'price', 'patient_name', 'document_type',
         'document_number', 'phone', 'email', 'address', 'consent_accepted_at',
         'consent_version', 'consent_text',
     ];
@@ -38,6 +39,7 @@ class Booking extends Model
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'hold_expires_at' => 'datetime',
+            'confirmed_at' => 'datetime',
             'active_start' => 'datetime',
             'consent_accepted_at' => 'datetime',
             'price' => 'integer',
@@ -57,6 +59,17 @@ class Booking extends Model
         return $this->belongsTo(Service::class);
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    /** ¿Tiene un pago que todavía puede terminar en cobro? */
+    public function hasPaymentInProgress(): bool
+    {
+        return $this->payments()->whereIn('status', Payment::IN_PROGRESS)->exists();
+    }
+
     /** ¿Sigue retenida a la espera del pago? */
     public function isHeld(): bool
     {
@@ -67,11 +80,12 @@ class Booking extends Model
 
     /**
      * Cancela una retención pendiente (el paciente cambió de hora): libera el
-     * horario y borra sus datos personales.
+     * horario y borra sus datos personales. No suelta una reserva con un pago en
+     * curso: esa hora se libera sola si el pago no se completa.
      */
     public function cancelHold(): void
     {
-        if ($this->status !== self::PENDING) {
+        if ($this->status !== self::PENDING || $this->hasPaymentInProgress()) {
             return;
         }
 

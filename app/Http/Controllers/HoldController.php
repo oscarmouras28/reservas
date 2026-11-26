@@ -70,13 +70,14 @@ class HoldController extends Controller
     /** Resumen de la hora retenida, con cuenta regresiva. */
     public function show(Request $request, Booking $booking): View
     {
-        $this->authorizeVisitor($request, $booking);
+        self::authorizeVisitor($request, $booking);
         $booking->load('professional', 'service');
 
         $local = $booking->starts_at->copy()->setTimezone($booking->professional->timezone)->locale('es');
 
         return view('booking.hold', [
             'booking' => $booking,
+            'paymentInProgress' => $booking->hasPaymentInProgress(),
             'dateLabel' => ucfirst($local->isoFormat('dddd D [de] MMMM [de] YYYY, HH:mm')),
             'secondsLeft' => $booking->isHeld()
                 ? (int) now()->diffInSeconds($booking->hold_expires_at)
@@ -87,13 +88,14 @@ class HoldController extends Controller
     /** El paciente quiere cambiar de hora: suelta la retención. */
     public function release(Request $request, Booking $booking): RedirectResponse
     {
-        $this->authorizeVisitor($request, $booking);
+        self::authorizeVisitor($request, $booking);
         $booking->cancelHold();
 
         return redirect()->route('booking.show', $booking->professional->slug);
     }
 
-    private function authorizeVisitor(Request $request, Booking $booking): void
+    /** Corta con 404 si la retención no es de este navegador. */
+    public static function authorizeVisitor(Request $request, Booking $booking): void
     {
         abort_unless(in_array($booking->public_id, $request->session()->get(self::SESSION_KEY, []), true), 404);
     }

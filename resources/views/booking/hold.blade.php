@@ -1,10 +1,28 @@
 @extends('layouts.app')
 
-@section('title', $secondsLeft > 0 ? 'Tu hora está apartada' : 'La reserva venció')
+@php
+    $confirmed = $booking->status === \App\Models\Booking::CONFIRMED;
+    $title = $confirmed ? 'Tu hora está reservada' : ($secondsLeft > 0 ? 'Tu hora está apartada' : 'La reserva venció');
+@endphp
+
+@section('title', $title)
 
 @section('content')
 <div class="mx-auto max-w-lg rounded-xl border border-slate-200 bg-white p-6">
-    @if ($secondsLeft > 0)
+    @include('partials.test-mode')
+
+    @if (session('payment_error'))
+        <p role="alert" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {{ session('payment_error') }}
+        </p>
+    @endif
+
+    @if ($confirmed)
+        <h1 class="text-xl font-semibold text-teal-700">Tu hora está reservada</h1>
+        <p class="mt-2 text-sm text-slate-600">
+            {{ $booking->professional->name }} · {{ $dateLabel }} h (hora de Chile). El pago ya está registrado.
+        </p>
+    @elseif ($secondsLeft > 0)
         <div x-data="holdTimer({{ $secondsLeft }})">
             <h1 class="text-xl font-semibold">Tu hora está apartada</h1>
             <p class="mt-1 text-sm text-slate-600">
@@ -35,16 +53,33 @@
             </div>
         </dl>
 
-        <button type="button" disabled
-                class="mt-6 w-full cursor-not-allowed rounded-lg bg-slate-300 px-4 py-3 font-medium text-white">
-            Pagar
-        </button>
-        <p class="mt-2 text-center text-xs text-slate-500">El pago se habilita en la siguiente etapa.</p>
+        @if ($paymentInProgress)
+            <p class="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Iniciaste un pago. Si no lo completaste, puedes intentarlo de nuevo.
+                Si ya pagaste, no vuelvas a pagar: estamos esperando la confirmación.
+            </p>
+        @endif
 
-        <form method="POST" action="{{ route('hold.release', $booking->public_id) }}" class="mt-4 text-center">
+        <form method="POST" action="{{ route('payment.start', $booking->public_id) }}" class="mt-6"
+              x-data="{ sending: false }" @submit="sending = true">
             @csrf
-            <button type="submit" class="text-sm text-teal-700 underline">Cambiar de hora</button>
+            <button type="submit" :disabled="sending"
+                    class="w-full rounded-lg bg-teal-600 px-4 py-3 font-medium text-white hover:bg-teal-700 disabled:opacity-60">
+                Pagar con Webpay
+            </button>
         </form>
+
+        @unless ($paymentInProgress)
+            <form method="POST" action="{{ route('hold.release', $booking->public_id) }}" class="mt-4 text-center">
+                @csrf
+                <button type="submit" class="text-sm text-teal-700 underline">Cambiar de hora</button>
+            </form>
+        @endunless
+    @elseif ($paymentInProgress)
+        <h1 class="text-xl font-semibold">Estamos verificando tu pago</h1>
+        <p class="mt-2 text-sm text-slate-600">
+            No vuelvas a pagar por ahora. Actualiza esta página en unos minutos.
+        </p>
     @else
         <h1 class="text-xl font-semibold">La reserva venció</h1>
         <p class="mt-2 text-sm text-slate-600">

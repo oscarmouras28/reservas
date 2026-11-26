@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Payments\PaymentGateway;
+use App\Payments\WebpayGateway;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,7 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(PaymentGateway::class, WebpayGateway::class);
     }
 
     /**
@@ -27,5 +29,7 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(5)->by('min:'.$request->ip()),
             Limit::perHour(30)->by('hour:'.$request->ip()),
         ]);
+
+        RateLimiter::for('payments', fn (Request $request) => Limit::perMinute(6)->by($request->ip()));
     }
 }
